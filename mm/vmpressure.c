@@ -239,36 +239,7 @@ static void vmpressure_work_fn(struct work_struct *work)
 	} while ((vmpr = vmpressure_parent(vmpr)));
 }
 
-static void vmpressure_memcg(gfp_t gfp, struct mem_cgroup *memcg,
-			     unsigned long scanned, unsigned long reclaimed)
-{
-	struct vmpressure *vmpr = memcg_to_vmpressure(memcg);
-
-	BUG_ON(!vmpr);
-
-	/*
-	 * If we got here with no pages scanned, then that is an indicator
-	 * that reclaimer was unable to find any shrinkable LRUs at the
-	 * current scanning depth. But it does not mean that we should
-	 * report the critical pressure, yet. If the scanning priority
-	 * (scanning depth) goes too high (deep), we will be notified
-	 * through vmpressure_prio(). But so far, keep calm.
-	 */
-	if (!scanned)
-		return;
-
-	spin_lock(&vmpr->sr_lock);
-	vmpr->scanned += scanned;
-	vmpr->reclaimed += reclaimed;
-	scanned = vmpr->scanned;
-	spin_unlock(&vmpr->sr_lock);
-
-	if (scanned < vmpressure_win)
-		return;
-	schedule_work(&vmpr->work);
-}
-
-static void calculate_vmpressure_win(void)
+static unsigned long calculate_vmpressure_win(void)
 {
 	long x;
 
@@ -290,18 +261,49 @@ static void calculate_vmpressure_win(void)
 	return int_sqrt(x);
 }
 
-static void vmpressure_global(gfp_t gfp, unsigned long scanned,
+static void vmpressure_memcg(gfp_t gfp, struct mem_cgroup *memcg, bool critical,
+			     unsigned long scanned, unsigned long reclaimed)
+{
+	struct vmpressure *vmpr = memcg_to_vmpressure(memcg);
+
+	BUG_ON(!vmpr);
+
+	/*
+	 * If we got here with no pages scanned, then that is an indicator
+	 * that reclaimer was unable to find any shrinkable LRUs at the
+	 * current scanning depth. But it does not mean that we should
+	 * report the critical pressure, yet. If the scanning priority
+	 * (scanning depth) goes too high (deep), we will be notified
+	 * through vmpressure_prio(). But so far, keep calm.
+	 */
+	if (critical)
+		scanned = calculate_vmpressure_win();
+	else if (!scanned)
+		return;
+
+	spin_lock(&vmpr->sr_lock);
+	vmpr->scanned += scanned;
+	vmpr->reclaimed += reclaimed;
+	scanned = vmpr->scanned;
+	spin_unlock(&vmpr->sr_lock);
+
+	if (!critical && scanned < calculate_vmpressure_win())
+		return;
+	schedule_work(&vmpr->work);
+}
+
+static void vmpressure_global(gfp_t gfp, unsigned long scanned, bool critical,
 			      unsigned long reclaimed)
 {
 	struct vmpressure *vmpr = &global_vmpressure;
 	unsigned long pressure;
 	unsigned long stall;
 
+	if (critical)
+		scanned = calculate_vmpressure_win();
+
 	if (scanned) {
 		spin_lock(&vmpr->sr_lock);
-		if (!vmpr->scanned)
-			calculate_vmpressure_win();
-
 		vmpr->scanned += scanned;
 		vmpr->reclaimed += reclaimed;
 
@@ -313,7 +315,7 @@ static void vmpressure_global(gfp_t gfp, unsigned long scanned,
 		reclaimed = vmpr->reclaimed;
 		spin_unlock(&vmpr->sr_lock);
 
-		if (scanned < vmpressure_win)
+		if (!critical && scanned < calculate_vmpressure_win())
 			return;
 	}
 
@@ -358,9 +360,6 @@ static void __vmpressure(gfp_t gfp, struct mem_cgroup *memcg, bool critical,
 void vmpressure(gfp_t gfp, struct mem_cgroup *memcg,
 		unsigned long scanned, unsigned long reclaimed, int order)
 {
-	if (order > PAGE_ALLOC_COSTLY_ORDER)
-		return;
-
 	__vmpressure(gfp, memcg, false, scanned, reclaimed);
 }
 
