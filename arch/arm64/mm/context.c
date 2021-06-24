@@ -230,8 +230,7 @@ static int asids_init(void)
 	/* If we end up with more CPUs than ASIDs, expect things to crash */
 	WARN_ON(NUM_USER_ASIDS < num_possible_cpus());
 	atomic64_set(&asid_generation, ASID_FIRST_VERSION);
-	asid_map = kzalloc(BITS_TO_LONGS(NUM_USER_ASIDS) * sizeof(*asid_map),
-			   GFP_KERNEL);
+	asid_map = bitmap_zalloc(NUM_USER_ASIDS, GFP_KERNEL);
 	if (!asid_map)
 		panic("Failed to allocate bitmap for %lu ASIDs\n",
 		      NUM_USER_ASIDS);
