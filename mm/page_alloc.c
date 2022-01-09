@@ -915,7 +915,11 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 				mt = get_pageblock_migratetype(page);
 
 			__free_one_page(page, page_to_pfn(page), zone, 0, mt);
+<<<<<<< HEAD
 			trace_mm_page_pcpu_drain(page, 0, mt);
+=======
+//			trace_mm_page_pcpu_drain(page, 0, mt);
+>>>>>>> e08a7a1a77a13b7185648f5902ca9fc65dfe7737
 		} while (--count && --batch_free && !list_empty(list));
 	}
 	spin_unlock(&zone->lock);

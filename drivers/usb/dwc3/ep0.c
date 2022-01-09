@@ -354,6 +354,9 @@ static struct dwc3_ep *dwc3_wIndex_to_dep(struct dwc3 *dwc, __le16 wIndex_le)
 		epnum |= 1;
 
 	dep = dwc->eps[epnum];
+	if (dep == NULL)
+		return NULL;
+
 	if (dep->flags & DWC3_EP_ENABLED)
 		return dep;
 
@@ -415,9 +418,7 @@ static int dwc3_ep0_handle_status(struct dwc3 *dwc,
 		 */
 
 		ret = dwc3_ep0_delegate_req(dwc, ctrl);
-		if (ret)
-			return ret;
-		break;
+		return ret;
 
 	case USB_RECIP_ENDPOINT:
 		dep = dwc3_wIndex_to_dep(dwc, ctrl->wIndex);
