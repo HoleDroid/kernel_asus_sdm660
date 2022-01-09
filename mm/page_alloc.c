@@ -91,11 +91,6 @@ EXPORT_PER_CPU_SYMBOL(_numa_mem_);
 int _node_numa_mem_[MAX_NUMNODES];
 #endif
 
-#ifdef CONFIG_GCC_PLUGIN_LATENT_ENTROPY
-volatile u64 latent_entropy;
-EXPORT_SYMBOL(latent_entropy);
-#endif
-
 /*
  * Array of node states.
  */
@@ -731,7 +726,7 @@ static inline void __free_one_page(struct page *page,
 	struct page *buddy;
 	unsigned int max_order;
 
-	max_order = min_t(unsigned int, MAX_ORDER, pageblock_order + 1);
+	max_order = min_t(unsigned int, MAX_ORDER - 1, pageblock_order);
 
 	VM_BUG_ON(!zone_is_initialized(zone));
 	VM_BUG_ON_PAGE(page->flags & PAGE_FLAGS_CHECK_AT_PREP, page);
@@ -746,7 +741,7 @@ static inline void __free_one_page(struct page *page,
 	VM_BUG_ON_PAGE(bad_range(zone, page), page);
 
 continue_merging:
-	while (order < max_order - 1) {
+	while (order < max_order) {
 		buddy_idx = __find_buddy_index(page_idx, order);
 		buddy = page + (buddy_idx - page_idx);
 		if (!page_is_buddy(page, buddy, order))
@@ -767,7 +762,7 @@ continue_merging:
 		page_idx = combined_idx;
 		order++;
 	}
-	if (max_order < MAX_ORDER) {
+	if (order < MAX_ORDER - 1) {
 		/* If we are here, it means order is >= pageblock_order.
 		 * We want to prevent merge between freepages on isolate
 		 * pageblock and normal pageblock. Without this, pageblock
@@ -788,7 +783,7 @@ continue_merging:
 						is_migrate_isolate(buddy_mt)))
 				goto done_merging;
 		}
-		max_order++;
+		max_order = order + 1;
 		goto continue_merging;
 	}
 
@@ -915,7 +910,7 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 				mt = get_pageblock_migratetype(page);
 
 			__free_one_page(page, page_to_pfn(page), zone, 0, mt);
-//			trace_mm_page_pcpu_drain(page, 0, mt);
+			trace_mm_page_pcpu_drain(page, 0, mt);
 		} while (--count && --batch_free && !list_empty(list));
 	}
 	spin_unlock(&zone->lock);
@@ -1049,7 +1044,7 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 	VM_BUG_ON_PAGE(PageTail(page), page);
 	VM_BUG_ON_PAGE(compound && compound_order(page) != order, page);
 
-//	trace_mm_page_free(page, order);
+	trace_mm_page_free(page, order);
 	kmemcheck_free_shadow(page, order);
 
 	if (PageMappingFlags(page))
@@ -1095,7 +1090,7 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 	local_irq_restore(flags);
 }
 
-static void __free_pages_boot_core(struct page *page, unsigned long pfn, unsigned int order)
+static void __init __free_pages_boot_core(struct page *page, unsigned long pfn, unsigned int order)
 {
 	unsigned int nr_pages = 1 << order;
 	struct page *p = page;
@@ -1558,11 +1553,6 @@ static int fallbacks[MIGRATE_TYPES][4] = {
 #endif
 };
 
-int *get_migratetype_fallbacks(int mtype)
-{
-	return fallbacks[mtype];
-}
-
 #ifdef CONFIG_CMA
 static struct page *__rmqueue_cma_fallback(struct zone *zone,
 					unsigned int order)
@@ -1907,8 +1897,8 @@ __rmqueue_fallback(struct zone *zone, unsigned int order, int start_migratetype)
 		 */
 		set_pcppage_migratetype(page, start_migratetype);
 
-//		trace_mm_page_alloc_extfrag(page, order, current_order,
-//			start_migratetype, fallback_mt);
+		trace_mm_page_alloc_extfrag(page, order, current_order,
+			start_migratetype, fallback_mt);
 
 		return page;
 	}
@@ -1930,7 +1920,7 @@ static struct page *__rmqueue(struct zone *zone, unsigned int order,
 		page = __rmqueue_fallback(zone, order, migratetype);
 	}
 
-//	trace_mm_page_alloc_zone_locked(page, order, migratetype);
+	trace_mm_page_alloc_zone_locked(page, order, migratetype);
 	return page;
 }
 
@@ -1941,7 +1931,7 @@ static struct page *__rmqueue_cma(struct zone *zone, unsigned int order)
 	if (IS_ENABLED(CONFIG_CMA))
 		if (!zone->cma_alloc)
 			page = __rmqueue_cma_fallback(zone, order);
-//	trace_mm_page_alloc_zone_locked(page, order, MIGRATE_CMA);
+	trace_mm_page_alloc_zone_locked(page, order, MIGRATE_CMA);
 	return page;
 }
 #else
@@ -2254,7 +2244,7 @@ void free_hot_cold_page_list(struct list_head *list, bool cold)
 	struct page *page, *next;
 
 	list_for_each_entry_safe(page, next, list, lru) {
-//		trace_mm_page_free_batched(page, cold);
+		trace_mm_page_free_batched(page, cold);
 		free_hot_cold_page(page, cold);
 	}
 }
@@ -2395,8 +2385,8 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 		page = NULL;
 		if (alloc_flags & ALLOC_HARDER) {
 			page = __rmqueue_smallest(zone, order, MIGRATE_HIGHATOMIC);
-//			if (page)
-//				trace_mm_page_alloc_zone_locked(page, order, migratetype);
+			if (page)
+				trace_mm_page_alloc_zone_locked(page, order, migratetype);
 		}
 		if (!page && migratetype == MIGRATE_MOVABLE &&
 				gfp_flags & __GFP_CMA)
@@ -3335,15 +3325,12 @@ noretry:
 	 * direct reclaim and reclaim/compaction depends on compaction
 	 * being called after reclaim so call directly if necessary
 	 */
-	for (i = order ? 4 : 0; i > 0; i--) {
-		page = __alloc_pages_direct_compact(gfp_mask, order,
-						    alloc_flags, ac,
-						    migration_mode,
-						    &contended_compaction,
-						    &deferred_compaction);
-		if (page)
-			goto got_pg;
-	}
+	page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags,
+					    ac, migration_mode,
+					    &contended_compaction,
+					    &deferred_compaction);
+	if (page)
+		goto got_pg;
 nopage:
 got_pg:
 	if (woke_kswapd)
@@ -3428,7 +3415,7 @@ retry_cpuset:
 	if (kmemcheck_enabled && page)
 		kmemcheck_pagealloc_alloc(page, order, gfp_mask);
 
-//	trace_mm_page_alloc(page, order, alloc_mask, ac.migratetype);
+	trace_mm_page_alloc(page, order, alloc_mask, ac.migratetype);
 
 out:
 	/*
@@ -3516,10 +3503,8 @@ static struct page *__page_frag_refill(struct page_frag_cache *nc,
 				PAGE_FRAG_CACHE_MAX_ORDER);
 	nc->size = page ? PAGE_FRAG_CACHE_MAX_SIZE : PAGE_SIZE;
 #endif
-	if (unlikely(!page)) {
-		gfp |= __GFP_KSWAPD_RECLAIM;
+	if (unlikely(!page))
 		page = alloc_pages_node(NUMA_NO_NODE, gfp, 0);
-	}
 
 	nc->va = page ? page_address(page) : NULL;
 
@@ -3812,13 +3797,6 @@ long si_mem_available(void)
 	 */
 	available += global_page_state(NR_SLAB_RECLAIMABLE) -
 		     min(global_page_state(NR_SLAB_RECLAIMABLE) / 2, wmark_low);
-
-	/*
-	 * Part of the kernel memory, which can be released under memory
-	 * pressure.
-	 */
-	available += global_page_state(NR_INDIRECTLY_RECLAIMABLE_BYTES) >>
-		PAGE_SHIFT;
 
 	if (available < 0)
 		available = 0;
@@ -4778,12 +4756,13 @@ static int zone_batchsize(struct zone *zone)
 
 	/*
 	 * The per-cpu-pages pools are set to around 1000th of the
-	 * size of the zone.
+	 * size of the zone.  But no more than 1/2 of a meg.
+	 *
+	 * OK, so we don't know how big the cache is.  So guess.
 	 */
 	batch = zone->managed_pages / 1024;
-	/* But no more than a meg. */
-	if (batch * PAGE_SIZE > 1024 * 1024)
-		batch = (1024 * 1024) / PAGE_SIZE;
+	if (batch * PAGE_SIZE > 512 * 1024)
+		batch = (512 * 1024) / PAGE_SIZE;
 	batch /= 4;		/* We effectively *= 4 below */
 	if (batch < 1)
 		batch = 1;
@@ -6937,7 +6916,6 @@ int alloc_contig_range(unsigned long start, unsigned long end,
 		.zone = page_zone(pfn_to_page(start)),
 		.mode = MIGRATE_SYNC,
 		.ignore_skip_hint = true,
-		.gfp_mask = GFP_KERNEL,
 	};
 	INIT_LIST_HEAD(&cc.migratepages);
 
