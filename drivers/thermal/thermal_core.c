@@ -2710,7 +2710,7 @@ static void thermal_unregister_governors(void)
 	thermal_gov_power_allocator_unregister();
 }
 
-#ifdef CONFIG_MACH_ASUS_X00T
+#ifdef CONFIG_MACH_ASUS
 static ssize_t
 thermal_message_of_batt_show(struct device *dev,
 				      struct device_attribute *attr, char *buf)
@@ -2927,7 +2927,7 @@ static int __init thermal_init(void)
 	if (result)
 		goto exit_netlink;
 
-#ifdef CONFIG_MACH_ASUS_X00T
+#ifdef CONFIG_MACH_ASUS
 	result = of_parse_thermal_message();
 	if (result)
 		pr_warn("Thermal: Can not get thermal message, return %d\n",
