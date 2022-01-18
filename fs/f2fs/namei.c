@@ -325,6 +325,9 @@ static int f2fs_link(struct dentry *old_dentry, struct inode *dir,
 	err = f2fs_is_checkpoint_ready(sbi);
 	if (err)
 		return err;
+	if (f2fs_encrypted_inode(dir) &&
+		!f2fs_is_child_context_consistent_with_parent(dir, inode))
+		return -EXDEV;
 
 	err = fscrypt_prepare_link(old_dentry, dir, dentry);
 	if (err)
@@ -866,6 +869,10 @@ static int f2fs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (!old_entry) {
 		if (IS_ERR(old_page))
 			err = PTR_ERR(old_page);
+	if ((old_dir != new_dir) && f2fs_encrypted_inode(new_dir) &&
+		!f2fs_is_child_context_consistent_with_parent(new_dir,
+							old_inode)) {
+		err = -EXDEV;
 		goto out;
 	}
 
@@ -1036,6 +1043,13 @@ static int f2fs_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
 	err = f2fs_is_checkpoint_ready(sbi);
 	if (err)
 		return err;
+	if ((f2fs_encrypted_inode(old_dir) || f2fs_encrypted_inode(new_dir)) &&
+		(old_dir != new_dir) &&
+		(!f2fs_is_child_context_consistent_with_parent(new_dir,
+								old_inode) ||
+		!f2fs_is_child_context_consistent_with_parent(old_dir,
+								new_inode)))
+		return -EXDEV;
 
 	if ((is_inode_flag_set(new_dir, FI_PROJ_INHERIT) &&
 			!projid_eq(F2FS_I(new_dir)->i_projid,
