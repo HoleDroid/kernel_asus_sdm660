@@ -139,6 +139,9 @@ static const int sdm660_mmss_fuse_ref_volt[SDM660_MMSS_FUSE_CORNERS] = {
 
 #define SDM660_MMSS_CPR_CLOCK_RATE		19200000
 
+/* For safety, the "custom voltage reduce" must <= 160mV */
+#define CUSTOM_VOLTAGE_REDUCE_LIMIT 160000
+
 enum {
 	SDM660_SOC_ID,
 	SDM630_SOC_ID,
@@ -240,6 +243,8 @@ static int cpr4_sdm660_mmss_calculate_open_loop_voltages(
 	int i, rc = 0;
 	const int *ref_volt;
 	int *fuse_volt;
+	struct device_node *node = vreg->of_node;
+	u32 custom_voltage_reduce;
 
 	fuse_volt = kcalloc(vreg->fuse_corner_count, sizeof(*fuse_volt),
 				GFP_KERNEL);
@@ -247,10 +252,21 @@ static int cpr4_sdm660_mmss_calculate_open_loop_voltages(
 		return -ENOMEM;
 
 	ref_volt = sdm660_mmss_fuse_ref_volt;
+
+	rc = of_property_read_u32(node, "qcom,custom-voltage-reduce",
+				  &custom_voltage_reduce);
+	if (rc < 0)
+		custom_voltage_reduce = 0;
+	if (custom_voltage_reduce > CUSTOM_VOLTAGE_REDUCE_LIMIT)
+		custom_voltage_reduce = CUSTOM_VOLTAGE_REDUCE_LIMIT;
+
 	for (i = 0; i < vreg->fuse_corner_count; i++) {
-		fuse_volt[i] = cpr3_convert_open_loop_voltage_fuse(ref_volt[i],
-			SDM660_MMSS_FUSE_STEP_VOLT, fuse->init_voltage[i],
-			SDM660_MMSS_VOLTAGE_FUSE_SIZE);
+		fuse_volt[i] = cpr3_convert_open_loop_voltage_fuse(
+			ref_volt[i] - custom_voltage_reduce,
+			SDM660_MMSS_FUSE_STEP_VOLT,
+			fuse->init_voltage[i],
+			SDM660_MMSS_VOLTAGE_FUSE_SIZE
+		);
 		cpr3_info(vreg, "fuse_corner[%d] open-loop=%7d uV\n",
 			i, fuse_volt[i]);
 	}
