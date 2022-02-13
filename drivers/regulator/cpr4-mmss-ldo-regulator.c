@@ -257,8 +257,9 @@ static int cpr4_sdm660_mmss_calculate_open_loop_voltages(
 				  &custom_voltage_reduce);
 	if (rc < 0)
 		custom_voltage_reduce = 0;
-	if (custom_voltage_reduce > CUSTOM_VOLTAGE_REDUCE_LIMIT)
+	else if (custom_voltage_reduce > CUSTOM_VOLTAGE_REDUCE_LIMIT)
 		custom_voltage_reduce = CUSTOM_VOLTAGE_REDUCE_LIMIT;
+	cpr3_info(vreg, "custom voltage reduce: %d uV\n", custom_voltage_reduce);
 
 	for (i = 0; i < vreg->fuse_corner_count; i++) {
 		fuse_volt[i] = cpr3_convert_open_loop_voltage_fuse(
