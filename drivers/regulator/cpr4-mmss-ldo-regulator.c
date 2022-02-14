@@ -268,6 +268,10 @@ static int cpr4_sdm660_mmss_calculate_open_loop_voltages(
 			fuse->init_voltage[i],
 			SDM660_MMSS_VOLTAGE_FUSE_SIZE
 		);
+		/* Also reduce both floor and ceiling voltages */
+		vreg->corner[i].floor_volt -= custom_voltage_reduce;
+		vreg->corner[i].ceiling_volt -= custom_voltage_reduce;
+
 		cpr3_info(vreg, "fuse_corner[%d] open-loop=%7d uV\n",
 			i, fuse_volt[i]);
 	}

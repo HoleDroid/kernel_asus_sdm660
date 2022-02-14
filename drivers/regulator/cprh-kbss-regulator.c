@@ -1084,6 +1084,9 @@ static int cprh_kbss_calculate_open_loop_voltages(struct cpr3_regulator *vreg)
 			fuse->init_voltage[i],
 			CPRH_KBSS_VOLTAGE_FUSE_SIZE
 		);
+		/* Also reduce both floor and ceiling voltages */
+		vreg->corner[i].floor_volt -= custom_voltage_reduce;
+		vreg->corner[i].ceiling_volt -= custom_voltage_reduce;
 
 		/* SDM660 speed bin #3 does not support TURBO_L1/L2 */
 		if (soc_revision == SDM660_SOC_ID && vreg->speed_bin_fuse == 3
